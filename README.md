@@ -164,7 +164,7 @@ Then **right-click** → **Open** the app — this is needed only once.
 
 ### Menu Bar
 
-<video src="assets/Menubar.mp4" width="480" controls></video>
+https://github.com/user-attachments/assets/7e76ac10-404e-4851-8647-72dfe33a6186
 
 ### Lock Screen
 
