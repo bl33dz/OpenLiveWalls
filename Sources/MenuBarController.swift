@@ -180,10 +180,15 @@ final class MenuBarController {
         let scroll = NSScrollView(frame: NSRect(x: 12, y: 12, width: 396, height: 200))
         scroll.hasVerticalScroller = true
         scroll.borderType = .bezelBorder
+        scroll.drawsBackground = true
+        scroll.backgroundColor = NSColor(calibratedWhite: 0.08, alpha: 1)
 
         let logView = NSTextView(frame: NSRect(x: 0, y: 0, width: 380, height: 180))
         logView.isEditable = false
         logView.font = NSFont(name: "Menlo", size: 10)
+        logView.textColor = NSColor(calibratedWhite: 0.9, alpha: 1)
+        logView.backgroundColor = NSColor(calibratedWhite: 0.08, alpha: 1)
+        logView.insertionPointColor = NSColor(calibratedWhite: 0.9, alpha: 1)
         scroll.documentView = logView
 
         win.contentView?.addSubview(spinner)
@@ -196,7 +201,11 @@ final class MenuBarController {
             if let output = String(data: fileHandle.availableData, encoding: .utf8),
                !output.isEmpty {
                 DispatchQueue.main.async {
-                    logView.textStorage?.append(NSAttributedString(string: output))
+                    let attributes: [NSAttributedString.Key: Any] = [
+                        .font: logView.font ?? NSFont.monospacedSystemFont(ofSize: 10, weight: .regular),
+                        .foregroundColor: logView.textColor ?? NSColor(calibratedWhite: 0.9, alpha: 1)
+                    ]
+                    logView.textStorage?.append(NSAttributedString(string: output, attributes: attributes))
                     logView.scrollToEndOfDocument(nil)
                 }
             }
