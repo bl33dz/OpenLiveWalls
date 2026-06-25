@@ -234,13 +234,14 @@ final class LockScreenManager: @unchecked Sendable {
         try patcher.save(outputURL: patched)
 
         var data = try Data(contentsOf: patched)
-        if let vendorRange = data.range(of: Data("FFMP".utf8)) {
+        while let vendorRange = data.range(of: Data("FFMP".utf8)) {
             data.replaceSubrange(vendorRange, with: [0, 0, 0, 0])
         }
 
         let fixed = URL(fileURLWithPath: "/tmp/owl_fixed_\(UUID().uuidString).mov")
         defer { try? fm.removeItem(at: fixed) }
         try data.write(to: fixed)
+        try validatePatchedWallpaper(data)
 
         let localDir = Bundle.main.bundleURL
             .deletingLastPathComponent()
@@ -254,12 +255,13 @@ final class LockScreenManager: @unchecked Sendable {
         try fm.copyItem(at: fixed, to: localDest)
         print("[convert] copied to local: \(localDest.lastPathComponent)")
 
-        inject(videoSourceURL: fixed)
+        inject(videoSourceURL: localDest)
     }
 
     enum LSError: LocalizedError {
         case encodeFailed
         case ffmpegNotFound
+        case patchVerificationFailed([String])
 
         var errorDescription: String? {
             switch self {
@@ -267,6 +269,8 @@ final class LockScreenManager: @unchecked Sendable {
                 return "ffmpeg failed to encode this video. Check that the file is readable and that your ffmpeg build supports libx265."
             case .ffmpegNotFound:
                 return "ffmpeg was not found. Install it with Homebrew (`brew install ffmpeg`) or place an ffmpeg binary at /opt/homebrew/bin/ffmpeg, /usr/local/bin/ffmpeg, or somewhere in PATH."
+            case .patchVerificationFailed(let missingAtoms):
+                return "The converted video was not patched correctly. Missing QuickTime atoms: \(missingAtoms.joined(separator: ", "))."
             }
         }
     }
@@ -305,6 +309,17 @@ final class LockScreenManager: @unchecked Sendable {
         }
 
         try png.write(to: URL(fileURLWithPath: previewPath))
+    }
+
+    private func validatePatchedWallpaper(_ data: Data) throws {
+        let requiredAtoms = ["csgm", "sgpd", "tapt", "cslg"]
+        let missingAtoms = requiredAtoms.filter { atom in
+            data.range(of: Data(atom.utf8)) == nil
+        }
+
+        guard missingAtoms.isEmpty else {
+            throw LSError.patchVerificationFailed(missingAtoms)
+        }
     }
 
     private func ffmpegURL() throws -> URL {
