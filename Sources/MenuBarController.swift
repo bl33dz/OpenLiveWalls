@@ -178,17 +178,27 @@ final class MenuBarController {
         label.frame = NSRect(x: 34, y: 218, width: 370, height: 20)
 
         let scroll = NSScrollView(frame: NSRect(x: 12, y: 12, width: 396, height: 200))
+        let logBackgroundColor = NSColor(calibratedWhite: 0.08, alpha: 1)
+        let logTextColor = NSColor(calibratedWhite: 0.92, alpha: 1)
+        let logFont = NSFont.monospacedSystemFont(ofSize: 10, weight: .regular)
+
         scroll.hasVerticalScroller = true
         scroll.borderType = .bezelBorder
         scroll.drawsBackground = true
-        scroll.backgroundColor = NSColor(calibratedWhite: 0.08, alpha: 1)
+        scroll.backgroundColor = logBackgroundColor
 
         let logView = NSTextView(frame: NSRect(x: 0, y: 0, width: 380, height: 180))
         logView.isEditable = false
-        logView.font = NSFont(name: "Menlo", size: 10)
-        logView.textColor = NSColor(calibratedWhite: 0.9, alpha: 1)
-        logView.backgroundColor = NSColor(calibratedWhite: 0.08, alpha: 1)
-        logView.insertionPointColor = NSColor(calibratedWhite: 0.9, alpha: 1)
+        logView.isRichText = true
+        logView.drawsBackground = true
+        logView.font = logFont
+        logView.textColor = logTextColor
+        logView.backgroundColor = logBackgroundColor
+        logView.insertionPointColor = logTextColor
+        logView.typingAttributes = [
+            .font: logFont,
+            .foregroundColor: logTextColor
+        ]
         scroll.documentView = logView
 
         win.contentView?.addSubview(spinner)
@@ -201,11 +211,16 @@ final class MenuBarController {
             if let output = String(data: fileHandle.availableData, encoding: .utf8),
                !output.isEmpty {
                 DispatchQueue.main.async {
+                    let outputFont = NSFont.monospacedSystemFont(ofSize: 10, weight: .regular)
+                    let outputColor = NSColor(calibratedWhite: 0.92, alpha: 1)
                     let attributes: [NSAttributedString.Key: Any] = [
-                        .font: logView.font ?? NSFont.monospacedSystemFont(ofSize: 10, weight: .regular),
-                        .foregroundColor: logView.textColor ?? NSColor(calibratedWhite: 0.9, alpha: 1)
+                        .font: outputFont,
+                        .foregroundColor: outputColor
                     ]
+                    let start = logView.textStorage?.length ?? 0
                     logView.textStorage?.append(NSAttributedString(string: output, attributes: attributes))
+                    let length = (logView.textStorage?.length ?? start) - start
+                    logView.textStorage?.addAttributes(attributes, range: NSRange(location: start, length: length))
                     logView.scrollToEndOfDocument(nil)
                 }
             }
