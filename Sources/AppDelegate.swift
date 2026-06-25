@@ -7,9 +7,6 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
 
     func applicationDidFinishLaunching(_ notification: Notification) {
         engine.start()
-        LockScreenManager.shared.start {
-            LockScreenManager.shared.reapply()
-        }
 
         menu.wallpaperSelected = { [weak self] path in
             self?.apply(path)
@@ -31,7 +28,6 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
     }
 
     func applicationWillTerminate(_ notification: Notification) {
-        LockScreenManager.shared.stop()
         engine.cleanup()
     }
 }
