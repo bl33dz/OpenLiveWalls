@@ -83,7 +83,7 @@ Unlike commercial alternatives, OpenLiveWalls is fully open-source. No accounts,
 
 ## Installation (DMG)
 
-Download the latest `OpenLiveWalls.dmg` from [Releases](https://github.com/bzz/OpenLiveWalls/releases), then:
+Download the latest `OpenLiveWalls.dmg` from [Releases](https://github.com/bl33dz/OpenLiveWalls/releases), then:
 
 1. Open the DMG and drag `OpenLiveWalls.app` to **Applications**
 2. Run the **First-Time Setup** steps below
@@ -219,7 +219,7 @@ Contributions are welcome! Here's how to help:
 4. Push to the branch (`git push origin feature/amazing-feature`)
 5. Open a Pull Request
 
-See the [Roadmap](#roadmap) for planned features — or suggest your own in [Issues](https://github.com/bzz/OpenLiveWalls/issues).
+See the [Roadmap](#roadmap) for planned features — or suggest your own in [Issues](https://github.com/bl33dz/OpenLiveWalls/issues).
 
 ---
 
