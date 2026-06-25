@@ -23,8 +23,22 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
 
         PersistenceManager.shared.lastWallpaperPath = path
         engine.applyWallpaper(url: url)
-        LockScreenManager.shared.inject(videoSourceURL: url)
-        LockScreenManager.shared.reapply()
+
+        switch LockScreenManager.shared.lockScreenSupportStatus(for: url) {
+        case .supported:
+            LockScreenManager.shared.inject(videoSourceURL: url)
+            LockScreenManager.shared.reapply()
+        case .unsupported(let reason):
+            showLockScreenUnsupportedAlert(reason: reason)
+        }
+    }
+
+    private func showLockScreenUnsupportedAlert(reason: String) {
+        let alert = NSAlert()
+        alert.messageText = "Desktop wallpaper applied"
+        alert.informativeText = "This video was not applied to the lock screen. \(reason)"
+        alert.addButton(withTitle: "OK")
+        alert.runModal()
     }
 
     func applicationWillTerminate(_ notification: Notification) {

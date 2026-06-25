@@ -84,6 +84,27 @@ final class LockScreenManager: @unchecked Sendable {
         }
     }
 
+    func lockScreenSupportStatus(for videoURL: URL) -> LockScreenSupportStatus {
+        guard videoURL.pathExtension.lowercased() == "mov" else {
+            return .unsupported("Lock screen wallpapers must be converted `.mov` files. Use Import & Convert for `.mp4` or raw video sources.")
+        }
+
+        guard let data = try? Data(contentsOf: videoURL) else {
+            return .unsupported("This video could not be read.")
+        }
+
+        let missingAtoms = missingRequiredWallpaperAtoms(in: data)
+        guard missingAtoms.isEmpty else {
+            return .unsupported("This `.mov` is missing required wallpaper atoms: \(missingAtoms.joined(separator: ", ")). Use Import & Convert first.")
+        }
+
+        if data.range(of: Data("FFMP".utf8)) != nil {
+            return .unsupported("This `.mov` still has an unsupported FFMP vendor tag. Use Import & Convert first.")
+        }
+
+        return .supported
+    }
+
     private func writeEntries(assetID: String, videoPath: String, name: String) throws {
         var entries = readEntries()
         var categories = entries["categories"] as? [[String: Any]] ?? []
@@ -275,6 +296,11 @@ final class LockScreenManager: @unchecked Sendable {
         }
     }
 
+    enum LockScreenSupportStatus {
+        case supported
+        case unsupported(String)
+    }
+
     private func currentAssetID() -> String {
         if let id = UserDefaults.standard.string(forKey: "owl_id") {
             return id
@@ -312,13 +338,16 @@ final class LockScreenManager: @unchecked Sendable {
     }
 
     private func validatePatchedWallpaper(_ data: Data) throws {
-        let requiredAtoms = ["csgm", "sgpd", "tapt", "cslg"]
-        let missingAtoms = requiredAtoms.filter { atom in
-            data.range(of: Data(atom.utf8)) == nil
-        }
+        let missingAtoms = missingRequiredWallpaperAtoms(in: data)
 
         guard missingAtoms.isEmpty else {
             throw LSError.patchVerificationFailed(missingAtoms)
+        }
+    }
+
+    private func missingRequiredWallpaperAtoms(in data: Data) -> [String] {
+        ["csgm", "sgpd", "tapt", "cslg"].filter { atom in
+            data.range(of: Data(atom.utf8)) == nil
         }
     }
 

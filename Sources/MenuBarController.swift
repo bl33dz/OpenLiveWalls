@@ -43,7 +43,7 @@ final class MenuBarController {
 
     private func addWallpaperItems(to menu: NSMenu) {
         if cachedFiles.isEmpty {
-            let item = NSMenuItem(title: "No wallpapers found", action: nil, keyEquivalent: "")
+            let item = NSMenuItem(title: "No supported wallpapers found", action: nil, keyEquivalent: "")
             item.isEnabled = false
             menu.addItem(item)
             return
@@ -100,16 +100,26 @@ final class MenuBarController {
             try? fm.createDirectory(at: localDir, withIntermediateDirectories: true)
             return
         }
-        let extensions = ["gif", "mp4", "mov"]
         do {
             let files = try fm.contentsOfDirectory(at: localDir, includingPropertiesForKeys: nil)
             cachedFiles = files
-                .filter { extensions.contains($0.pathExtension.lowercased()) }
+                .filter { isSupportedWallpaper($0) }
                 .map { (name: $0.lastPathComponent, path: $0.path) }
                 .sorted { $0.name.localizedStandardCompare($1.name) == .orderedAscending }
         } catch {
             print("[MenuBar] Failed to scan local/: \(error)")
             cachedFiles = []
+        }
+    }
+
+    private func isSupportedWallpaper(_ url: URL) -> Bool {
+        guard url.pathExtension.lowercased() == "mov" else { return false }
+
+        switch LockScreenManager.shared.lockScreenSupportStatus(for: url) {
+        case .supported:
+            return true
+        case .unsupported:
+            return false
         }
     }
 
