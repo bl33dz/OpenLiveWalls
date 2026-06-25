@@ -104,7 +104,7 @@ final class MenuBarController {
             let files = try fm.contentsOfDirectory(at: localDir, includingPropertiesForKeys: nil)
             cachedFiles = files
                 .filter { isSupportedWallpaper($0) }
-                .map { (name: $0.lastPathComponent, path: $0.path) }
+                .map { (name: $0.deletingPathExtension().lastPathComponent, path: $0.path) }
                 .sorted { $0.name.localizedStandardCompare($1.name) == .orderedAscending }
         } catch {
             print("[MenuBar] Failed to scan local/: \(error)")
@@ -246,7 +246,7 @@ final class MenuBarController {
                     let localDir = Bundle.main.bundleURL
                         .deletingLastPathComponent()
                         .appendingPathComponent("local", isDirectory: true)
-                    let dest = localDir.appendingPathComponent(displayName + "_lock.mov")
+                    let dest = localDir.appendingPathComponent(LockScreenManager.safeWallpaperFileName(for: displayName))
                     self.wallpaperSelected?(dest.path)
                 }
             } catch {

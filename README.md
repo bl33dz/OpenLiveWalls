@@ -59,7 +59,7 @@ Generated build output and the app bundle are intentionally ignored by git.
 
 The app reads local wallpapers from a `local/` folder next to the built app bundle. If the folder does not exist, the app creates it.
 
-When importing a video, the app writes a converted `*_lock.mov` file into that `local/` folder and selects it automatically.
+When importing a video, the app writes a converted `{name}.mov` file into that `local/` folder and selects it automatically.
 
 Local media files are ignored by git so large videos do not end up in repository history.
 

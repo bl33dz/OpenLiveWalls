@@ -29,6 +29,20 @@ final class LockScreenManager: @unchecked Sendable {
 
     private init() {}
 
+    static func safeWallpaperFileName(for name: String) -> String {
+        let trimmed = name.trimmingCharacters(in: .whitespacesAndNewlines)
+        let fallback = trimmed.isEmpty ? "wallpaper" : trimmed
+        let invalid = CharacterSet(charactersIn: "/:\\")
+            .union(.controlCharacters)
+            .union(.newlines)
+        let sanitized = fallback
+            .components(separatedBy: invalid)
+            .joined(separator: "-")
+            .trimmingCharacters(in: CharacterSet(charactersIn: ". "))
+
+        return (sanitized.isEmpty ? "wallpaper" : sanitized) + ".mov"
+    }
+
     func start(_ task: @escaping () -> Void) {
         let queue = DispatchQueue(label: "owl.ls", qos: .default)
         timer = DispatchSource.makeTimerSource(queue: queue)
@@ -269,8 +283,8 @@ final class LockScreenManager: @unchecked Sendable {
             .appendingPathComponent("local", isDirectory: true)
         try? fm.createDirectory(at: localDir, withIntermediateDirectories: true)
 
-        let safeName = name.isEmpty ? source.deletingPathExtension().lastPathComponent : name
-        let localDest = localDir.appendingPathComponent(safeName + "_lock.mov")
+        let displayName = name.isEmpty ? source.deletingPathExtension().lastPathComponent : name
+        let localDest = localDir.appendingPathComponent(Self.safeWallpaperFileName(for: displayName))
 
         try? fm.removeItem(at: localDest)
         try fm.copyItem(at: fixed, to: localDest)
