@@ -1,70 +1,238 @@
+<div align="center">
+
 # OpenLiveWalls
 
-OpenLiveWalls is a macOS menu bar app for using local video files as live desktop wallpapers and converting videos for macOS live lock screen wallpaper support.
+**Open-source live video wallpapers for macOS — local, private, hackable.**
 
-## Tested Platform
+<br />
 
-I have only tested this on macOS 26.
+<img src="assets/banner.png" alt="OpenLiveWalls" width="640">
 
-The package and bundle metadata currently declare macOS 15 as the minimum target, but other macOS versions are not verified yet.
+<br />
 
-## Current Scope
+<img alt="Swift 6" src="https://img.shields.io/badge/Swift_6-F05138?style=for-the-badge&logo=swift&logoColor=white">
+<img alt="macOS" src="https://img.shields.io/badge/macOS_26+-000000.svg?style=for-the-badge&logo=apple&logoColor=white">
+<img alt="License" src="https://img.shields.io/badge/License-GPLv3-blue?style=for-the-badge">
 
-For now, focus on `.mp4` and `.mov` videos as source files.
+<br />
+<br />
 
-The import flow accepts MPEG-4 and QuickTime movies, converts them with `ffmpeg`, patches the required QuickTime atoms, and saves the converted wallpaper into the app's local wallpaper folder.
+*Your desktop, your videos, no strings attached.*
 
-## Requirements
+</div>
 
-- macOS 26 for the tested setup
-- Swift 6 toolchain
-- `ffmpeg` with `libx265` support for import and conversion
+---
+
+## Table of Contents
+
+- [About](#about)
+- [Features](#features)
+- [Installation](#installation-dmg)
+- [Build from Source](#build-from-source)
+- [Usage](#usage)
+- [Built With](#built-with)
+- [Roadmap](#roadmap)
+- [Contributing](#contributing)
+- [License](#license)
+- [Acknowledgments](#acknowledgments)
+
+---
+
+## About
+
+OpenLiveWalls is a macOS menu bar app that turns your local video files into live desktop wallpapers. It also converts and patches videos for macOS native lock screen wallpaper support — all offline, all private.
+
+Unlike commercial alternatives, OpenLiveWalls is fully open-source. No accounts, no cloud, no telemetry. Your wallpapers stay on your machine.
+
+---
+
+## Features
+
+| Feature | Status |
+|:--------|:-------|
+| Local `.mov` desktop wallpapers | ✅ |
+| Import & convert `.mp4` / `.mov` via ffmpeg | ✅ |
+| Lock screen wallpaper injection (macOS 26+) | ✅ |
+| QuickTime atom patching for compatibility | ✅ |
+| Launch at login | ✅ |
+| Multi-display support | 🔜 |
+| Settings panel | 🚧 Planned |
+| Smart power management | 🚧 Planned |
+
+### Current capabilities
+
+**Desktop wallpapers** — Play your local `.mov` files as seamless looping desktop wallpapers. Metal-optimized video playback via AVFoundation with hardware decoding.
+
+**Lock screen conversion** — Import any `.mp4` or `.mov` source, and the app will ffmpeg-transcode it to HEVC, patch the required QuickTime atoms (`csgm`, `sgpd`, `tapt`, `sbgp`, `cslg`), and inject it as a native macOS lock screen wallpaper.
+
+**Privacy-first** — Everything runs locally. No network requests, no data collection, no accounts.
+
+---
+
+## Built With
+
+| Layer | Technologies |
+|:------|:-------------|
+| Language | Swift 6 |
+| UI | AppKit (menu bar) |
+| Media | AVFoundation, AVKit, VideoToolbox |
+| Tooling | Swift Package Manager, ffmpeg (libx265) |
+| Build | `swift build`, `./build.sh` |
+
+---
+
+## Installation (DMG)
+
+Download the latest `OpenLiveWalls.dmg` from [Releases](https://github.com/bzz/OpenLiveWalls/releases), then:
+
+1. Open the DMG and drag `OpenLiveWalls.app` to **Applications**
+2. Run the **First-Time Setup** steps below
+3. Launch the app — it lives in your menu bar
+
+> **Note:** Video conversion requires `ffmpeg` with `libx265`. Install it via:
+> ```sh
+> brew install ffmpeg
+> ```
+> Pre-converted `.mov` wallpapers work without ffmpeg.
+
+---
+
+## Build from Source
+
+### Prerequisites
+
+- macOS 26 (tested; macOS 15+ declared as minimum target)
+- Xcode Command Line Tools (or Swift 6 toolchain)
+- `ffmpeg` with `libx265` support
 
 The app looks for `ffmpeg` in:
 
 - `/opt/homebrew/bin/ffmpeg`
 - `/usr/local/bin/ffmpeg`
 - `/usr/bin/ffmpeg`
-- any `ffmpeg` available in `PATH`
-
-On Homebrew, install it with:
+- any `ffmpeg` in `PATH`
 
 ```sh
 brew install ffmpeg
 ```
 
-## Build
-
-Build the Swift package:
+### Build
 
 ```sh
 swift build
 ```
 
-Build a release app bundle:
+Or for a release app bundle:
 
 ```sh
 ./build.sh
 ```
 
-The app bundle is generated at:
+Output:
 
-```text
+```
 OpenLiveWalls.app
 ```
 
-Generated build output and the app bundle are intentionally ignored by git.
+---
 
-## Local Wallpapers
+## Usage
 
-The app reads local wallpapers from a `local/` folder next to the built app bundle. If the folder does not exist, the app creates it.
+1. Launch the app — it lives in your menu bar.
+2. Use the menu bar item to **Import & Convert** an `.mp4` or `.mov` source video.
+3. The converted wallpaper is saved as `{name}.mov` in a `local/` folder next to the app.
+4. Supported `.mov` files appear in the menu — click to set as desktop wallpaper.
+5. Use the **Apply to Lock Screen** option to set it as your lock screen wallpaper (macOS 26+).
 
-When importing a video, the app writes a converted `{name}.mov` file into that `local/` folder and selects it automatically.
+> Only converted `.mov` files that pass atom compatibility checks are shown in the wallpaper list. Import raw files through the app first.
 
-Local media files are ignored by git so large videos do not end up in repository history.
+---
 
-## Notes
+## First-Time Setup
 
-- OpenLiveWalls writes into the user's `Application Support/com.apple.wallpaper` files.
-- Lock screen conversion uses HEVC and QuickTime atom patching for macOS wallpaper compatibility.
-- This project does not currently declare a license.
+macOS may block OpenLiveWalls because it's not notarized (Apple Developer Program required). To fix:
+
+```sh
+xattr -dr com.apple.quarantine /Applications/OpenLiveWalls.app
+```
+
+Then **right-click** → **Open** the app — this is needed only once.
+
+---
+
+## Previews
+
+### Menu Bar
+
+<video src="assets/Menubar.mp4" width="480" controls></video>
+
+### Lock Screen
+
+<img src="assets/LockScreen.gif" alt="Lock Screen Demo" width="480">
+
+---
+
+## Roadmap
+
+### Phase 1 — Polish & Settings (Next)
+- [ ] **Settings panel** — a dedicated settings window for:
+  - Playback frame rate & resolution limits
+  - Transition duration & cross-fade between wallpapers
+  - Start delay configuration
+  - ffmpeg path override
+- [ ] **Persistence** — remember last applied wallpaper across launches
+- [ ] **Improved diagnostics** — better error messages when atom patching or conversion fails
+- [ ] **Replace deprecated API** — modernize thumbnail generation
+- [ ] **DMG packaging** — automated `.dmg` build for distribution via GitHub Releases
+
+### Phase 2 — Multi-Display & Power Management
+- [ ] **Multi-display support** — independent wallpapers per monitor, per-screen controls
+- [ ] **Smart pause** — auto-pause on battery power
+- [ ] **Fullscreen detection** — pause when any app enters fullscreen
+- [ ] **CPU monitor** — pause when system load exceeds threshold
+- [ ] **Display sleep/wake handling** — seamless restore after sleep
+
+### Phase 3 — Advanced Playback
+- [ ] **Shuffle mode** — rotate through a collection of wallpapers with configurable interval
+- [ ] **Playback speed control** — per-wallpaper speed adjustment
+- [ ] **Video volume & mute** — per-display volume control
+- [ ] **Wallpaper favorites** — mark and filter saved wallpapers
+- [ ] **Import queue** — batch import multiple files with progress
+
+### Phase 4 — Cloud & Community (Stretch)
+- [ ] **Wallpaper library browser** — discover and download community wallpapers
+- [ ] **Community uploads** — share your converted wallpapers
+- [ ] **Sync favorites & settings** — optional iCloud sync
+- [ ] **Screen saver support** — native macOS screen saver extension
+- [ ] **Video trim & crop** — built-in editor before conversion
+- [ ] **Homebrew cask** — `brew install openlivewalls` for easy installation
+
+---
+
+## Contributing
+
+Contributions are welcome! Here's how to help:
+
+1. Fork the repository
+2. Create a feature branch (`git checkout -b feature/amazing-feature`)
+3. Commit your changes (`git commit -m 'Add amazing feature'`)
+4. Push to the branch (`git push origin feature/amazing-feature`)
+5. Open a Pull Request
+
+See the [Roadmap](#roadmap) for planned features — or suggest your own in [Issues](https://github.com/bzz/OpenLiveWalls/issues).
+
+---
+
+## License
+
+This project is licensed under the GNU General Public License v3.0 — see the [LICENSE](LICENSE) file for details.
+
+---
+
+## Acknowledgments
+
+- [Wallper](https://wallper.app) — feature design and UX reference
+- [Backdrop](https://cindori.com/backdrop) — feature design reference
+- [LiveWallpaperMacOS](https://github.com/thusvill/LiveWallpaperMacOS) — open-source reference
+- [livid-community](https://github.com/aground5/livid-community) — video conversion approach reference
+- `ffmpeg` — the backbone of video conversion
