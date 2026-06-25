@@ -1,0 +1,9 @@
+.build/
+*.o
+*.swp
+*.swo
+.DS_Store
+*.dSYM/
+*.xcuserstate
+local/
+OpenLiveWalls.app/
