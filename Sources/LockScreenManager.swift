@@ -56,7 +56,7 @@ final class LockScreenManager: @unchecked Sendable {
         timer = nil
     }
 
-    func inject(videoSourceURL: URL) {
+    func inject(videoSourceURL: URL) async {
         do {
             try fm.createDirectory(at: vDir, withIntermediateDirectories: true)
             try fm.createDirectory(at: tDir, withIntermediateDirectories: true)
@@ -70,7 +70,7 @@ final class LockScreenManager: @unchecked Sendable {
             try? fm.removeItem(at: videoDestination)
             try fm.copyItem(at: videoSourceURL, to: videoDestination)
 
-            try writeEntries(assetID: id, videoPath: videoDestination.path, name: name)
+            try await writeEntries(assetID: id, videoPath: videoDestination.path, name: name)
             try writeStore(assetID: id)
             killAll()
 
@@ -119,7 +119,7 @@ final class LockScreenManager: @unchecked Sendable {
         return .supported
     }
 
-    private func writeEntries(assetID: String, videoPath: String, name: String) throws {
+    private func writeEntries(assetID: String, videoPath: String, name: String) async throws {
         var entries = readEntries()
         var categories = entries["categories"] as? [[String: Any]] ?? []
         var assets = entries["assets"] as? [[String: Any]] ?? []
@@ -128,7 +128,7 @@ final class LockScreenManager: @unchecked Sendable {
         assets.removeAll { ($0["categories"] as? [String])?.contains(catID) ?? false }
 
         let previewPath = tDir.appendingPathComponent("\(assetID).png").path
-        try writePreviewImage(videoPath: videoPath, previewPath: previewPath)
+        try await writePreviewImage(videoPath: videoPath, previewPath: previewPath)
 
         categories.append([
             "id": catID,
@@ -224,7 +224,7 @@ final class LockScreenManager: @unchecked Sendable {
         ).write(to: sURL, options: .atomic)
     }
 
-    func convertAndInject(source: URL, name: String = "", outputPipe: Pipe? = nil) throws {
+    func convertAndInject(source: URL, name: String = "", outputPipe: Pipe? = nil) async throws {
         let x265 = URL(fileURLWithPath: "/tmp/owl_x265_\(UUID().uuidString).mov")
         defer { try? fm.removeItem(at: x265) }
 
@@ -290,7 +290,7 @@ final class LockScreenManager: @unchecked Sendable {
         try fm.copyItem(at: fixed, to: localDest)
         print("[convert] copied to local: \(localDest.lastPathComponent)")
 
-        inject(videoSourceURL: localDest)
+        await inject(videoSourceURL: localDest)
     }
 
     enum LSError: LocalizedError {
@@ -338,12 +338,12 @@ final class LockScreenManager: @unchecked Sendable {
         return entries
     }
 
-    private func writePreviewImage(videoPath: String, previewPath: String) throws {
+    private func writePreviewImage(videoPath: String, previewPath: String) async throws {
         let asset = AVURLAsset(url: URL(fileURLWithPath: videoPath))
         let generator = AVAssetImageGenerator(asset: asset)
         let time = CMTime(seconds: 2, preferredTimescale: 600)
 
-        guard let cgImage = try? generator.copyCGImage(at: time, actualTime: nil),
+        guard let cgImage = (try? await generator.image(at: time))?.image,
               let png = NSBitmapImageRep(cgImage: cgImage).representation(using: .png, properties: [:]) else {
             return
         }
