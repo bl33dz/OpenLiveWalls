@@ -182,7 +182,7 @@ https://github.com/user-attachments/assets/7e76ac10-404e-4851-8647-72dfe33a6186
   - ffmpeg path override
 - [ ] **Persistence** — remember last applied wallpaper across launches
 - [ ] **Improved diagnostics** — better error messages when atom patching or conversion fails
-- [ ] **Replace deprecated API** — modernize thumbnail generation
+- [x] **Replace deprecated API** — modernize thumbnail generation
 - [ ] **DMG packaging** — automated `.dmg` build for distribution via GitHub Releases
 
 ### Phase 2 — Multi-Display & Power Management

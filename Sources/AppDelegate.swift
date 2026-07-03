@@ -26,8 +26,10 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
 
         switch LockScreenManager.shared.lockScreenSupportStatus(for: url) {
         case .supported:
-            LockScreenManager.shared.inject(videoSourceURL: url)
-            LockScreenManager.shared.reapply()
+            Task {
+                await LockScreenManager.shared.inject(videoSourceURL: url)
+                LockScreenManager.shared.reapply()
+            }
         case .unsupported(let reason):
             showLockScreenUnsupportedAlert(reason: reason)
         }

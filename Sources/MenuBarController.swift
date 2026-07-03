@@ -236,10 +236,10 @@ final class MenuBarController {
             }
         }
 
-        DispatchQueue.global().async {
+        Task {
             do {
-                try LockScreenManager.shared.convertAndInject(source: url, name: displayName, outputPipe: pipe)
-                DispatchQueue.main.async {
+                try await LockScreenManager.shared.convertAndInject(source: url, name: displayName, outputPipe: pipe)
+                await MainActor.run {
                     win.orderOut(nil)
                     self.refreshWallpapers()
 
@@ -250,7 +250,7 @@ final class MenuBarController {
                     self.wallpaperSelected?(dest.path)
                 }
             } catch {
-                DispatchQueue.main.async {
+                await MainActor.run {
                     win.orderOut(nil)
                     let alert = NSAlert()
                     alert.messageText = "Conversion failed"
