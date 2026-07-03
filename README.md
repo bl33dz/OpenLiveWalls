@@ -183,7 +183,7 @@ https://github.com/user-attachments/assets/7e76ac10-404e-4851-8647-72dfe33a6186
 - [ ] **Persistence** — remember last applied wallpaper across launches
 - [ ] **Improved diagnostics** — better error messages when atom patching or conversion fails
 - [x] **Replace deprecated API** — modernize thumbnail generation
-- [ ] **DMG packaging** — automated `.dmg` build for distribution via GitHub Releases
+- [x] **DMG packaging** — automated `.dmg` build for distribution via GitHub Releases
 
 ### Phase 2 — Multi-Display & Power Management
 - [ ] **Multi-display support** — independent wallpapers per monitor, per-screen controls

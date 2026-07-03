@@ -1,0 +1,44 @@
+name: Build & Release
+
+on:
+  push:
+    tags: ["v*"]
+
+jobs:
+  build:
+    runs-on: macos-26
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Install dependencies
+        run: brew install ffmpeg create-dmg
+
+      - name: Build app
+        run: swift build -c release
+
+      - name: Create app bundle
+        run: |
+          rm -rf OpenLiveWalls.app
+          mkdir -p OpenLiveWalls.app/Contents/MacOS OpenLiveWalls.app/Contents/Resources
+          cp .build/release/OpenLiveWalls OpenLiveWalls.app/Contents/MacOS/
+          cp Bundle/Info.plist OpenLiveWalls.app/Contents/
+          cp Bundle/AppIcon.icns OpenLiveWalls.app/Contents/Resources/
+          echo "APPL????" > OpenLiveWalls.app/Contents/PkgInfo
+
+      - name: Create DMG
+        run: |
+          rm -rf /tmp/dist
+          mkdir -p /tmp/dist
+          cp -R OpenLiveWalls.app /tmp/dist/
+          create-dmg \
+            --volname "OpenLiveWalls" \
+            --volicon Bundle/AppIcon.icns \
+            --window-pos 200 200 --window-size 600 450 \
+            --icon-size 100 --icon "OpenLiveWalls.app" 150 190 \
+            --app-drop-link 450 190 \
+            OpenLiveWalls.dmg /tmp/dist
+
+      - name: Upload Release
+        uses: softprops/action-gh-release@v2
+        with:
+          files: OpenLiveWalls.dmg
