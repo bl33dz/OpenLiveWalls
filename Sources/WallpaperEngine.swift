@@ -10,12 +10,26 @@ final class WallpaperEngine {
     private var activeURL: URL?
     private let desktopLevel = Int(CGWindowLevelForKey(.desktopWindow)) + 1
 
-    private var screenObserver: NSObjectProtocol?
+    private var observers: [NSObjectProtocol] = []
+    private var workspaceObservers: [NSObjectProtocol] = []
+    private var pollTimer: Timer?
+
+    /// Re-check interval for the state poll. Occlusion and space notifications
+    /// drive the common transitions; this only backstops the cases AppKit does
+    /// not announce, most importantly a window created while already covered,
+    /// which never receives a change notification.
+    private let pollInterval: TimeInterval = 3
+
+    private var policy: PlaybackPolicy = PersistenceManager.shared.playbackPolicy
+    private var isPaused = false
+    private var screensAsleep = false
 
     nonisolated init() {}
 
     func start() {
-        screenObserver = NotificationCenter.default.addObserver(
+        let center = NotificationCenter.default
+
+        observers.append(center.addObserver(
             forName: NSApplication.didChangeScreenParametersNotification,
             object: nil, queue: .main
         ) { [weak self] _ in
@@ -23,8 +37,60 @@ final class WallpaperEngine {
                 guard let url = self?.activeURL else { return }
                 self?.applyWallpaper(url: url)
             }
+        })
+
+        // Covered/uncovered transitions for our own wallpaper windows.
+        observers.append(center.addObserver(
+            forName: NSWindow.didChangeOcclusionStateNotification,
+            object: nil, queue: .main
+        ) { [weak self] _ in
+            Task { @MainActor [weak self] in self?.updatePlaybackState() }
+        })
+
+        let workspace = NSWorkspace.shared.notificationCenter
+
+        // Entering or leaving a fullscreen space is a space switch.
+        workspaceObservers.append(workspace.addObserver(
+            forName: NSWorkspace.activeSpaceDidChangeNotification,
+            object: nil, queue: .main
+        ) { [weak self] _ in
+            Task { @MainActor [weak self] in self?.updatePlaybackState() }
+        })
+
+        // Nothing is visible while the displays are off.
+        workspaceObservers.append(workspace.addObserver(
+            forName: NSWorkspace.screensDidSleepNotification,
+            object: nil, queue: .main
+        ) { [weak self] _ in
+            Task { @MainActor [weak self] in
+                self?.screensAsleep = true
+                self?.updatePlaybackState()
+            }
+        })
+
+        workspaceObservers.append(workspace.addObserver(
+            forName: NSWorkspace.screensDidWakeNotification,
+            object: nil, queue: .main
+        ) { [weak self] _ in
+            Task { @MainActor [weak self] in
+                self?.screensAsleep = false
+                self?.updatePlaybackState()
+            }
+        })
+
+        pollTimer = Timer.scheduledTimer(withTimeInterval: pollInterval, repeats: true) { [weak self] _ in
+            Task { @MainActor [weak self] in self?.updatePlaybackState() }
         }
     }
+
+    /// Switches policy and applies it immediately.
+    func setPolicy(_ newPolicy: PlaybackPolicy) {
+        policy = newPolicy
+        PersistenceManager.shared.playbackPolicy = newPolicy
+        updatePlaybackState()
+    }
+
+    var currentPolicy: PlaybackPolicy { policy }
 
     func applyWallpaper(url: URL) {
         guard activeURL != url || wallpaperWindows.isEmpty else { return }
@@ -37,13 +103,74 @@ final class WallpaperEngine {
         }
 
         removeDisconnectedScreens()
-        player.play()
+
+        // A wallpaper applied while the desktop is already hidden must not
+        // start decoding, so the state is recomputed rather than assumed.
+        isPaused = shouldPauseNow()
+        applyPlaybackState()
+    }
+
+    /// Starts or stops decoding to match the current policy and screen state.
+    private func updatePlaybackState() {
+        guard let activeURL, players[activeURL] != nil else { return }
+
+        let shouldPause = shouldPauseNow()
+
+        if ProcessInfo.processInfo.environment["OWL_DEBUG"] != nil {
+            let msg = "[owl] policy=\(policy.rawValue) windows=\(wallpaperWindows.count) "
+                + "hidden=\(ScreenState.isDesktopHidden()) fullscreen=\(ScreenState.isAnyAppFullscreen()) "
+                + "shouldPause=\(shouldPause) isPaused=\(isPaused)\n"
+            FileHandle.standardError.write(Data(msg.utf8))
+        }
+
+        guard shouldPause != isPaused else { return }
+        isPaused = shouldPause
+        applyPlaybackState()
+    }
+
+    /// Drives every cached player to the state it should be in.
+    ///
+    /// Only the wallpaper currently on screen may decode. Players kept from
+    /// earlier selections are no longer attached to any layer, so leaving one
+    /// running would decode video that cannot be seen.
+    private func applyPlaybackState() {
+        for (url, player) in players {
+            if url == activeURL, !isPaused {
+                player.play()
+            } else {
+                player.pause()
+            }
+        }
+    }
+
+    private func shouldPauseNow() -> Bool {
+        if screensAsleep { return true }
+
+        switch policy {
+        case .always:
+            return false
+        case .fullscreen:
+            return ScreenState.isAnyAppFullscreen()
+        case .covered:
+            // Fullscreen is normally a subset of "covered", but a fullscreen
+            // space hides the menu bar and changes `visibleFrame`, so test both.
+            return ScreenState.isDesktopHidden() || ScreenState.isAnyAppFullscreen()
+        }
     }
 
     func cleanup() {
-        if let screenObserver {
-            NotificationCenter.default.removeObserver(screenObserver)
+        pollTimer?.invalidate()
+        pollTimer = nil
+
+        for observer in observers {
+            NotificationCenter.default.removeObserver(observer)
         }
+        observers.removeAll()
+
+        for observer in workspaceObservers {
+            NSWorkspace.shared.notificationCenter.removeObserver(observer)
+        }
+        workspaceObservers.removeAll()
 
         for looper in loopers.values {
             looper.disableLooping()

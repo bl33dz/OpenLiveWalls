@@ -4,6 +4,7 @@ import ServiceManagement
 @MainActor
 final class MenuBarController {
     var wallpaperSelected: ((String) -> Void)?
+    var policyChanged: ((PlaybackPolicy) -> Void)?
 
     private let statusItem = NSStatusBar.system.statusItem(withLength: NSStatusItem.squareLength)
     private let localDir: URL
@@ -78,6 +79,10 @@ final class MenuBarController {
     private func addAppActions(to menu: NSMenu) {
         menu.addItem(NSMenuItem.separator())
 
+        let playbackItem = NSMenuItem(title: "Playback", action: nil, keyEquivalent: "")
+        playbackItem.submenu = playbackSubmenu()
+        menu.addItem(playbackItem)
+
         let launchItem = NSMenuItem(title: "Launch at Login", action: #selector(toggleLaunchAtLogin), keyEquivalent: "")
         launchItem.state = SMAppService.mainApp.status == .enabled ? .on : .off
         launchItem.target = self
@@ -121,6 +126,28 @@ final class MenuBarController {
         case .unsupported:
             return false
         }
+    }
+
+    private func playbackSubmenu() -> NSMenu {
+        let submenu = NSMenu()
+        let current = PersistenceManager.shared.playbackPolicy
+
+        for policy in PlaybackPolicy.allCases {
+            let item = NSMenuItem(title: policy.title, action: #selector(selectPolicy(_:)), keyEquivalent: "")
+            item.representedObject = policy.rawValue
+            item.target = self
+            item.state = (policy == current) ? .on : .off
+            item.toolTip = policy.detail
+            submenu.addItem(item)
+        }
+
+        return submenu
+    }
+
+    @objc private func selectPolicy(_ sender: NSMenuItem) {
+        guard let raw = sender.representedObject as? String,
+              let policy = PlaybackPolicy(rawValue: raw) else { return }
+        policyChanged?(policy)
     }
 
     @objc private func selectWallpaper(_ sender: NSMenuItem) {

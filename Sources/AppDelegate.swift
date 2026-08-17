@@ -12,6 +12,10 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
             self?.apply(path)
         }
 
+        menu.policyChanged = { [weak self] policy in
+            self?.engine.setPolicy(policy)
+        }
+
         if let saved = PersistenceManager.shared.lastWallpaperPath,
            FileManager.default.fileExists(atPath: saved) {
             apply(saved)
