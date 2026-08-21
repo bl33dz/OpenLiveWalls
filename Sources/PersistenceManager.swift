@@ -33,5 +33,16 @@ final class PersistenceManager: @unchecked Sendable {
         set { defaults.set(newValue, forKey: "launchedBefore") }
     }
 
+    /// Defaults to `.covered`: the wallpaper sits below every app window, so
+    /// decoding while it is hidden burns CPU for nothing.
+    var playbackPolicy: PlaybackPolicy {
+        get {
+            guard let raw = defaults.string(forKey: "playbackPolicy"),
+                  let policy = PlaybackPolicy(rawValue: raw) else { return .covered }
+            return policy
+        }
+        set { defaults.set(newValue.rawValue, forKey: "playbackPolicy") }
+    }
+
     private init() {}
 }
