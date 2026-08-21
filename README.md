@@ -57,7 +57,7 @@ Unlike commercial alternatives, OpenLiveWalls is fully open-source. No accounts,
 | Launch at login | ✅ |
 | Multi-display support | 🔜 |
 | Settings panel | 🚧 Planned |
-| Smart power management | 🚧 Planned |
+| Smart power management | ✅ |
 
 ### Current capabilities
 
@@ -188,9 +188,10 @@ https://github.com/user-attachments/assets/7e76ac10-404e-4851-8647-72dfe33a6186
 ### Phase 2 — Multi-Display & Power Management
 - [ ] **Multi-display support** — independent wallpapers per monitor, per-screen controls
 - [ ] **Smart pause** — auto-pause on battery power
-- [ ] **Fullscreen detection** — pause when any app enters fullscreen
+- [x] **Fullscreen detection** — pause when any app enters fullscreen
+- [x] **Pause when covered** — stop decoding when windows hide the desktop (shipped in v1.2)
 - [ ] **CPU monitor** — pause when system load exceeds threshold
-- [ ] **Display sleep/wake handling** — seamless restore after sleep
+- [x] **Display sleep/wake handling** — seamless restore after sleep
 
 ### Phase 3 — Advanced Playback
 - [ ] **Shuffle mode** — rotate through a collection of wallpapers with configurable interval
