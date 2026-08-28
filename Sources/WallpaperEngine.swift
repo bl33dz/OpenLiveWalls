@@ -5,8 +5,14 @@ import AVKit
 @MainActor
 final class WallpaperEngine {
     private var wallpaperWindows: [NSScreen: NSWindow] = [:]
-    private var players: [URL: AVQueuePlayer] = [:]
-    private var loopers: [URL: AVPlayerLooper] = [:]
+
+    // Players are per screen, not per URL. An AVPlayer renders into a single
+    // AVPlayerLayer: attaching one player to several layers leaves every layer
+    // but the last frozen on whatever frame it happened to hold.
+    private var players: [NSScreen: AVQueuePlayer] = [:]
+    private var loopers: [NSScreen: AVPlayerLooper] = [:]
+    private var playerURLs: [NSScreen: URL] = [:]
+
     private var activeURL: URL?
     private let desktopLevel = Int(CGWindowLevelForKey(.desktopWindow)) + 1
 
@@ -21,7 +27,7 @@ final class WallpaperEngine {
     private let pollInterval: TimeInterval = 3
 
     private var policy: PlaybackPolicy = PersistenceManager.shared.playbackPolicy
-    private var isPaused = false
+    private var pausedScreens: Set<NSScreen> = []
     private var screensAsleep = false
 
     nonisolated init() {}
@@ -35,7 +41,7 @@ final class WallpaperEngine {
         ) { [weak self] _ in
             Task { @MainActor [weak self] in
                 guard let url = self?.activeURL else { return }
-                self?.applyWallpaper(url: url)
+                self?.applyWallpaper(url: url, force: true)
             }
         })
 
@@ -93,68 +99,78 @@ final class WallpaperEngine {
     var currentPolicy: PlaybackPolicy { policy }
 
     func applyWallpaper(url: URL) {
-        guard activeURL != url || wallpaperWindows.isEmpty else { return }
+        applyWallpaper(url: url, force: false)
+    }
+
+    /// - Parameter force: rebuild even when the URL is unchanged, used when the
+    ///   screen layout changes and displays may have come or gone.
+    private func applyWallpaper(url: URL, force: Bool) {
+        guard force || activeURL != url || wallpaperWindows.isEmpty else { return }
         activeURL = url
 
-        let player = player(for: url)
-
         for screen in NSScreen.screens {
+            let player = player(for: url, on: screen)
             showWallpaper(on: screen, player: player)
         }
 
         removeDisconnectedScreens()
 
-        // A wallpaper applied while the desktop is already hidden must not
-        // start decoding, so the state is recomputed rather than assumed.
-        isPaused = shouldPauseNow()
+        // A wallpaper applied while a desktop is already hidden must not start
+        // decoding there, so state is recomputed rather than assumed.
+        pausedScreens = []
+        for screen in players.keys where shouldPause(on: screen) {
+            pausedScreens.insert(screen)
+        }
         applyPlaybackState()
     }
 
-    /// Starts or stops decoding to match the current policy and screen state.
+    /// Starts or stops decoding per screen to match policy and screen state.
     private func updatePlaybackState() {
-        guard let activeURL, players[activeURL] != nil else { return }
+        guard activeURL != nil, !players.isEmpty else { return }
 
-        let shouldPause = shouldPauseNow()
+        var next: Set<NSScreen> = []
+        for screen in players.keys where shouldPause(on: screen) {
+            next.insert(screen)
+        }
 
         if ProcessInfo.processInfo.environment["OWL_DEBUG"] != nil {
-            let msg = "[owl] policy=\(policy.rawValue) windows=\(wallpaperWindows.count) "
-                + "hidden=\(ScreenState.isDesktopHidden()) fullscreen=\(ScreenState.isAnyAppFullscreen()) "
-                + "shouldPause=\(shouldPause) isPaused=\(isPaused)\n"
+            let states = players.keys.map { screen in
+                let size = screen.frame.size
+                return "\(Int(size.width))x\(Int(size.height))="
+                    + (next.contains(screen) ? "paused" : "playing")
+            }.sorted().joined(separator: " ")
+            let msg = "[owl] policy=\(policy.rawValue) screens=\(players.count) \(states)\n"
             FileHandle.standardError.write(Data(msg.utf8))
         }
 
-        guard shouldPause != isPaused else { return }
-        isPaused = shouldPause
+        guard next != pausedScreens else { return }
+        pausedScreens = next
         applyPlaybackState()
     }
 
-    /// Drives every cached player to the state it should be in.
-    ///
-    /// Only the wallpaper currently on screen may decode. Players kept from
-    /// earlier selections are no longer attached to any layer, so leaving one
-    /// running would decode video that cannot be seen.
+    /// Drives each screen's player to the state that screen should be in.
     private func applyPlaybackState() {
-        for (url, player) in players {
-            if url == activeURL, !isPaused {
-                player.play()
-            } else {
+        for (screen, player) in players {
+            if pausedScreens.contains(screen) {
                 player.pause()
+            } else {
+                player.play()
             }
         }
     }
 
-    private func shouldPauseNow() -> Bool {
+    private func shouldPause(on screen: NSScreen) -> Bool {
         if screensAsleep { return true }
 
         switch policy {
         case .always:
             return false
         case .fullscreen:
-            return ScreenState.isAnyAppFullscreen()
+            return ScreenState.isFullscreen(screen)
         case .covered:
             // Fullscreen is normally a subset of "covered", but a fullscreen
-            // space hides the menu bar and changes `visibleFrame`, so test both.
-            return ScreenState.isDesktopHidden() || ScreenState.isAnyAppFullscreen()
+            // space hides the menu bar and changes visibleFrame, so test both.
+            return ScreenState.isHidden(screen) || ScreenState.isFullscreen(screen)
         }
     }
 
@@ -172,28 +188,23 @@ final class WallpaperEngine {
         }
         workspaceObservers.removeAll()
 
-        for looper in loopers.values {
-            looper.disableLooping()
+        for screen in Array(players.keys) {
+            teardownPlayer(for: screen)
         }
-
-        for player in players.values {
-            player.pause()
-            player.removeAllItems()
-        }
-
-        loopers.removeAll()
-        players.removeAll()
 
         for window in wallpaperWindows.values {
             window.orderOut(nil)
         }
         wallpaperWindows.removeAll()
+        pausedScreens.removeAll()
     }
 
-    private func player(for url: URL) -> AVQueuePlayer {
-        if let existing = players[url] {
+    private func player(for url: URL, on screen: NSScreen) -> AVQueuePlayer {
+        if let existing = players[screen], playerURLs[screen] == url {
             return existing
         }
+
+        teardownPlayer(for: screen)
 
         let item = AVPlayerItem(asset: AVURLAsset(url: url))
         item.preferredForwardBufferDuration = 0
@@ -202,18 +213,38 @@ final class WallpaperEngine {
         player.isMuted = true
         player.automaticallyWaitsToMinimizeStalling = false
 
-        players[url] = player
-        loopers[url] = AVPlayerLooper(player: player, templateItem: item)
+        players[screen] = player
+        loopers[screen] = AVPlayerLooper(player: player, templateItem: item)
+        playerURLs[screen] = url
 
         return player
     }
 
+    private func teardownPlayer(for screen: NSScreen) {
+        loopers[screen]?.disableLooping()
+        players[screen]?.pause()
+        players[screen]?.removeAllItems()
+
+        loopers.removeValue(forKey: screen)
+        players.removeValue(forKey: screen)
+        playerURLs.removeValue(forKey: screen)
+        pausedScreens.remove(screen)
+    }
+
     private func showWallpaper(on screen: NSScreen, player: AVQueuePlayer) {
+        // Window content coordinates start at zero regardless of where the
+        // screen sits in the global layout, so a screen frame with a non-zero
+        // origin must not be used to position content inside the window.
+        let contentBounds = CGRect(origin: .zero, size: screen.frame.size)
+
         if let window = wallpaperWindows[screen] {
+            window.setFrame(screen.frame, display: true)
             for layer in window.contentView?.layer?.sublayers ?? [] {
                 guard let playerLayer = layer as? AVPlayerLayer else { continue }
                 playerLayer.player = player
+                playerLayer.frame = contentBounds
             }
+            window.contentView?.frame = contentBounds
             window.orderFrontRegardless()
             return
         }
@@ -232,11 +263,11 @@ final class WallpaperEngine {
         window.backgroundColor = .clear
 
         let layer = AVPlayerLayer(player: player)
-        layer.frame = screen.frame
+        layer.frame = contentBounds
         layer.videoGravity = .resizeAspectFill
         layer.autoresizingMask = [.layerWidthSizable, .layerHeightSizable]
 
-        let host = NSView(frame: screen.frame)
+        let host = NSView(frame: contentBounds)
         host.wantsLayer = true
         host.layer?.addSublayer(layer)
 
@@ -251,6 +282,10 @@ final class WallpaperEngine {
         for (screen, window) in wallpaperWindows where !current.contains(screen) {
             window.orderOut(nil)
             wallpaperWindows.removeValue(forKey: screen)
+        }
+
+        for screen in Array(players.keys) where !current.contains(screen) {
+            teardownPlayer(for: screen)
         }
     }
 }

@@ -30,47 +30,83 @@ enum PlaybackPolicy: String, CaseIterable {
     }
 }
 
-/// Screen-state queries backing `PlaybackPolicy`.
+/// Per-screen state queries backing `PlaybackPolicy`.
 ///
 /// `NSWindow.occlusionState` is the obvious tool here and it does not work for
 /// this window. A wallpaper window sits at desktop level with
 /// `.canJoinAllSpaces`, so AppKit mirrors it onto every space and reports
-/// `.visible` as long as *any* space shows it — measured as `visible=true`
+/// `.visible` as long as *any* space shows it - measured as `visible=true`
 /// with a screen fully covered by opaque windows. Coverage is therefore
 /// computed directly from the window server's geometry instead.
+///
+/// Every query is per screen: with one display covered and another showing the
+/// desktop, only the covered one should stop decoding.
 @MainActor
 enum ScreenState {
-    /// True when no part of the wallpaper is showing on any display.
+    /// True when no part of the wallpaper is showing on `screen`.
     ///
-    /// Coverage is tested against each screen's `visibleFrame`, which already
-    /// excludes the menu bar and Dock — regions the wallpaper never owns and
+    /// Coverage is tested against the screen's `visibleFrame`, which already
+    /// excludes the menu bar and Dock - regions the wallpaper never owns and
     /// which no ordinary window would ever cover.
-    static func isDesktopHidden() -> Bool {
-        let regions = visibleRegions()
-        guard !regions.isEmpty else { return false }
+    static func isHidden(_ screen: NSScreen) -> Bool {
+        guard let region = visibleRegion(for: screen) else { return false }
 
         let covers = normalWindowRects()
         guard !covers.isEmpty else { return false }
 
-        return regions.allSatisfy { isCovered($0, by: covers) }
+        return isCovered(region, by: covers)
     }
 
-    /// Each screen's wallpaper-bearing area, in the window server's flipped
-    /// global coordinate space so it can be compared with `kCGWindowBounds`.
-    private static func visibleRegions() -> [CGRect] {
+    /// True when a window exactly fills `screen`, including the menu bar strip.
+    ///
+    /// A zoomed (green-button) window stops below the menu bar, so it stays
+    /// clear of this test; only a real fullscreen space matches a full display
+    /// frame at the origin.
+    static func isFullscreen(_ screen: NSScreen) -> Bool {
+        guard let display = displayBounds(for: screen),
+              let list = CGWindowListCopyWindowInfo([.optionOnScreenOnly, .excludeDesktopElements],
+                                                    kCGNullWindowID) as? [[String: Any]] else {
+            return false
+        }
+
+        for window in list {
+            guard (window[kCGWindowLayer as String] as? Int) == 0,
+                  let bounds = window[kCGWindowBounds as String] as? [String: Double] else { continue }
+
+            let rect = CGRect(x: bounds["X"] ?? 0, y: bounds["Y"] ?? 0,
+                              width: bounds["Width"] ?? 0, height: bounds["Height"] ?? 0)
+            if fits(rect, display) { return true }
+        }
+
+        return false
+    }
+
+    /// `screen` bounds in the window server's flipped global space, which is
+    /// the space `kCGWindowBounds` reports in.
+    private static func displayBounds(for screen: NSScreen) -> CGRect? {
+        guard let number = screen.deviceDescription[NSDeviceDescriptionKey("NSScreenNumber")] as? NSNumber else {
+            return nil
+        }
+        return CGDisplayBounds(CGDirectDisplayID(number.uint32Value))
+    }
+
+    /// The screen's wallpaper-bearing area, converted from AppKit's
+    /// bottom-left origin to the window server's top-left origin.
+    ///
+    /// The flip is measured against the primary screen's height, since global
+    /// window coordinates are anchored to the primary display's top edge.
+    private static func visibleRegion(for screen: NSScreen) -> CGRect? {
         let screens = NSScreen.screens
         guard let primary = screens.first(where: { $0.frame.origin == .zero }) ?? screens.first else {
-            return []
+            return nil
         }
         let flipHeight = primary.frame.maxY
+        let frame = screen.visibleFrame
 
-        return screens.map { screen in
-            let frame = screen.visibleFrame
-            return CGRect(x: frame.origin.x,
-                          y: flipHeight - frame.maxY,
-                          width: frame.width,
-                          height: frame.height)
-        }
+        return CGRect(x: frame.origin.x,
+                      y: flipHeight - frame.maxY,
+                      width: frame.width,
+                      height: frame.height)
     }
 
     /// Opaque, on-screen, ordinary application windows.
@@ -134,47 +170,6 @@ enum ScreenState {
             pieces.append(CGRect(x: overlap.maxX, y: overlap.minY, width: rect.maxX - overlap.maxX, height: overlap.height))
         }
         return pieces
-    }
-
-    /// True when a window exactly fills a display, including the menu bar strip.
-    ///
-    /// A zoomed (green-button) window stops below the menu bar, so it stays
-    /// clear of this test; only a real fullscreen space matches a full display
-    /// frame at the origin.
-    static func isAnyAppFullscreen() -> Bool {
-        guard let list = CGWindowListCopyWindowInfo([.optionOnScreenOnly, .excludeDesktopElements],
-                                                    kCGNullWindowID) as? [[String: Any]] else {
-            return false
-        }
-
-        let displays = displayFrames()
-        guard !displays.isEmpty else { return false }
-
-        for window in list {
-            guard (window[kCGWindowLayer as String] as? Int) == 0,
-                  let bounds = window[kCGWindowBounds as String] as? [String: Double] else { continue }
-
-            let rect = CGRect(x: bounds["X"] ?? 0, y: bounds["Y"] ?? 0,
-                              width: bounds["Width"] ?? 0, height: bounds["Height"] ?? 0)
-
-            // A fullscreen window matches its display frame outright. Allow a
-            // point of slack for rounding on scaled displays.
-            if displays.contains(where: { fits(rect, $0) }) { return true }
-        }
-
-        return false
-    }
-
-    /// Display bounds in the window server's flipped, global coordinate space,
-    /// which is what `kCGWindowBounds` reports.
-    private static func displayFrames() -> [CGRect] {
-        var count: UInt32 = 0
-        guard CGGetActiveDisplayList(0, nil, &count) == .success, count > 0 else { return [] }
-
-        var ids = [CGDirectDisplayID](repeating: 0, count: Int(count))
-        guard CGGetActiveDisplayList(count, &ids, &count) == .success else { return [] }
-
-        return ids.map { CGDisplayBounds($0) }
     }
 
     private static func fits(_ rect: CGRect, _ display: CGRect) -> Bool {
