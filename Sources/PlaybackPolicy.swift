@@ -134,21 +134,40 @@ enum ScreenState {
         return rects
     }
 
-    /// Exact coverage test by rectangle subtraction: whittle `target` down by
-    /// each covering rect and report whether anything survives.
+    /// Edge gaps thinner than this are structural rather than visible
+    /// wallpaper. macOS leaves a few points between a window's bottom edge and
+    /// the Dock, and a secondary display can report a `visibleFrame` spanning
+    /// its whole height while a menu bar strip at the top is covered by no
+    /// ordinary window. Measured at 4pt and 30pt respectively on a two-display
+    /// setup, which is why requiring total coverage never paused anything.
+    private static let sliverLimit: CGFloat = 40
+
+    /// Uncovered fraction at or below this still counts as hidden.
+    private static let visibleAreaTolerance: CGFloat = 0.005
+
+    /// Coverage test by rectangle subtraction: whittle `target` down by each
+    /// covering rect, discard edge slivers, and judge the rest by area.
+    ///
+    /// Area rather than emptiness is the deciding rule because a strip a few
+    /// points tall along one edge is not someone looking at their wallpaper,
+    /// while a genuinely visible patch of desktop is chunky in both dimensions.
     private static func isCovered(_ target: CGRect, by rects: [CGRect]) -> Bool {
+        let targetArea = target.width * target.height
+        guard targetArea > 0 else { return true }
+
         var remaining = [target]
 
         for rect in rects {
             if remaining.isEmpty { return true }
             remaining = remaining
                 .flatMap { subtract(rect, from: $0) }
-                // Sliver tolerance: shadows and rounded corners leave sub-pixel
-                // gaps that should not count as visible wallpaper.
-                .filter { $0.width > 2 && $0.height > 2 }
+                .filter { $0.width > 1 && $0.height > 1 }
         }
 
-        return remaining.isEmpty
+        let meaningful = remaining.filter { min($0.width, $0.height) > sliverLimit }
+        let uncovered = meaningful.reduce(CGFloat.zero) { $0 + $1.width * $1.height }
+
+        return uncovered / targetArea <= visibleAreaTolerance
     }
 
     /// `rect` minus `cut`, as up to four non-overlapping pieces.
