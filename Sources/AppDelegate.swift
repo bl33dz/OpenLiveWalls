@@ -4,6 +4,7 @@ import AppKit
 final class AppDelegate: NSObject, NSApplicationDelegate {
     private let menu = MenuBarController()
     private let engine = WallpaperEngine()
+    private let gallery = GalleryWindowController()
 
     func applicationDidFinishLaunching(_ notification: Notification) {
         engine.start()
@@ -16,9 +17,21 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
             self?.engine.setPolicy(policy)
         }
 
+        menu.galleryRequested = { [weak self] in
+            self?.gallery.show()
+        }
+
+        gallery.model.onApply = { [weak self] wallpaper in
+            self?.apply(wallpaper.path)
+        }
+
         if let saved = PersistenceManager.shared.lastWallpaperPath,
            FileManager.default.fileExists(atPath: saved) {
             apply(saved)
+        }
+
+        if ProcessInfo.processInfo.environment["OWL_OPEN_GALLERY"] != nil {
+            gallery.show()
         }
     }
 
@@ -27,6 +40,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
 
         PersistenceManager.shared.lastWallpaperPath = path
         engine.applyWallpaper(url: url)
+        gallery.model.markCurrent(path)
 
         switch LockScreenManager.shared.lockScreenSupportStatus(for: url) {
         case .supported:

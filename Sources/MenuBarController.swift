@@ -5,15 +5,12 @@ import ServiceManagement
 final class MenuBarController {
     var wallpaperSelected: ((String) -> Void)?
     var policyChanged: ((PlaybackPolicy) -> Void)?
+    var galleryRequested: (() -> Void)?
 
     private let statusItem = NSStatusBar.system.statusItem(withLength: NSStatusItem.squareLength)
-    private let localDir: URL
-    private var cachedFiles: [(name: String, path: String)] = []
+    private var cachedFiles: [Wallpaper] = []
 
     init() {
-        let base = Bundle.main.bundleURL
-            .deletingLastPathComponent()
-        localDir = base.appendingPathComponent("local", isDirectory: true)
         setupMenu()
         scanLocalFolder()
     }
@@ -30,6 +27,12 @@ final class MenuBarController {
         scanLocalFolder()
 
         let menu = NSMenu()
+
+        let browseItem = NSMenuItem(title: "Browse Wallpapers…", action: #selector(browseWallpapers), keyEquivalent: "b")
+        browseItem.target = self
+        menu.addItem(browseItem)
+        menu.addItem(NSMenuItem.separator())
+
         addWallpaperItems(to: menu)
         addFileActions(to: menu)
         addAppActions(to: menu)
@@ -100,32 +103,7 @@ final class MenuBarController {
     }
 
     private func scanLocalFolder() {
-        let fm = FileManager.default
-        guard fm.fileExists(atPath: localDir.path) else {
-            try? fm.createDirectory(at: localDir, withIntermediateDirectories: true)
-            return
-        }
-        do {
-            let files = try fm.contentsOfDirectory(at: localDir, includingPropertiesForKeys: nil)
-            cachedFiles = files
-                .filter { isSupportedWallpaper($0) }
-                .map { (name: $0.deletingPathExtension().lastPathComponent, path: $0.path) }
-                .sorted { $0.name.localizedStandardCompare($1.name) == .orderedAscending }
-        } catch {
-            print("[MenuBar] Failed to scan local/: \(error)")
-            cachedFiles = []
-        }
-    }
-
-    private func isSupportedWallpaper(_ url: URL) -> Bool {
-        guard url.pathExtension.lowercased() == "mov" else { return false }
-
-        switch LockScreenManager.shared.lockScreenSupportStatus(for: url) {
-        case .supported:
-            return true
-        case .unsupported:
-            return false
-        }
+        cachedFiles = WallpaperLibrary.scan()
     }
 
     private func playbackSubmenu() -> NSMenu {
@@ -155,8 +133,12 @@ final class MenuBarController {
         wallpaperSelected?(path)
     }
 
+    @objc private func browseWallpapers() {
+        galleryRequested?()
+    }
+
     @objc private func openLocalFolder() {
-        NSWorkspace.shared.open(localDir)
+        NSWorkspace.shared.open(WallpaperLibrary.directory)
     }
 
     @objc private func refreshWallpapers() {
@@ -270,10 +252,7 @@ final class MenuBarController {
                     win.orderOut(nil)
                     self.refreshWallpapers()
 
-                    let localDir = Bundle.main.bundleURL
-                        .deletingLastPathComponent()
-                        .appendingPathComponent("local", isDirectory: true)
-                    let dest = localDir.appendingPathComponent(LockScreenManager.safeWallpaperFileName(for: displayName))
+                    let dest = WallpaperLibrary.directory.appendingPathComponent(LockScreenManager.safeWallpaperFileName(for: displayName))
                     self.wallpaperSelected?(dest.path)
                 }
             } catch {

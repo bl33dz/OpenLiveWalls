@@ -103,7 +103,9 @@ final class LockScreenManager: @unchecked Sendable {
             return .unsupported("Lock screen wallpapers must be converted `.mov` files. Use Import & Convert for `.mp4` or raw video sources.")
         }
 
-        guard let data = try? Data(contentsOf: videoURL) else {
+        // Mapped, not read: the scan touches every wallpaper in the library, and
+        // copied buffers stayed resident at the size of the largest files.
+        guard let data = try? Data(contentsOf: videoURL, options: .mappedIfSafe) else {
             return .unsupported("This video could not be read.")
         }
 
