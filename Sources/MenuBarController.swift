@@ -5,6 +5,7 @@ import ServiceManagement
 final class MenuBarController {
     var wallpaperSelected: ((String) -> Void)?
     var policyChanged: ((PlaybackPolicy) -> Void)?
+    var galleryRequested: (() -> Void)?
 
     private let statusItem = NSStatusBar.system.statusItem(withLength: NSStatusItem.squareLength)
     private var cachedFiles: [Wallpaper] = []
@@ -26,6 +27,12 @@ final class MenuBarController {
         scanLocalFolder()
 
         let menu = NSMenu()
+
+        let browseItem = NSMenuItem(title: "Browse Wallpapers…", action: #selector(browseWallpapers), keyEquivalent: "b")
+        browseItem.target = self
+        menu.addItem(browseItem)
+        menu.addItem(NSMenuItem.separator())
+
         addWallpaperItems(to: menu)
         addFileActions(to: menu)
         addAppActions(to: menu)
@@ -124,6 +131,10 @@ final class MenuBarController {
     @objc private func selectWallpaper(_ sender: NSMenuItem) {
         guard let path = sender.representedObject as? String else { return }
         wallpaperSelected?(path)
+    }
+
+    @objc private func browseWallpapers() {
+        galleryRequested?()
     }
 
     @objc private func openLocalFolder() {
