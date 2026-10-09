@@ -57,11 +57,19 @@ enum ScreenState {
         return isCovered(region, by: covers)
     }
 
-    /// True when a window exactly fills `screen`, including the menu bar strip.
+    /// True when one app's windows fill `screen`, as in a fullscreen space.
     ///
-    /// A zoomed (green-button) window stops below the menu bar, so it stays
-    /// clear of this test; only a real fullscreen space matches a full display
-    /// frame at the origin.
+    /// On a display with a camera housing, a fullscreen space starts below it
+    /// rather than at the top edge, so the target is the display minus its top
+    /// safe-area inset. Measured on a 1512x982 panel reporting a 32pt inset: a
+    /// fullscreen terminal began at y=33, split across a 68pt toolbar window
+    /// and the content window under it. No single window matched the display,
+    /// so windows are grouped by owning app and judged together.
+    ///
+    /// A zoomed (green-button) window stops below the menu bar and above a
+    /// visible Dock, so it stays clear of this test. On a notched display the
+    /// menu bar is as tall as the inset, so a zoomed window with the Dock
+    /// hidden matches too; the wallpaper is then visible only beside the notch.
     static func isFullscreen(_ screen: NSScreen) -> Bool {
         guard let display = displayBounds(for: screen),
               let list = CGWindowListCopyWindowInfo([.optionOnScreenOnly, .excludeDesktopElements],
@@ -69,16 +77,25 @@ enum ScreenState {
             return false
         }
 
+        let inset = screen.safeAreaInsets.top
+        let content = CGRect(x: display.minX, y: display.minY + inset,
+                             width: display.width, height: display.height - inset)
+        let onDisplay = display.insetBy(dx: -fullscreenTolerance, dy: -fullscreenTolerance)
+
+        var windowsByApp: [Int: [CGRect]] = [:]
         for window in list {
             guard (window[kCGWindowLayer as String] as? Int) == 0,
+                  let owner = window[kCGWindowOwnerPID as String] as? Int,
                   let bounds = window[kCGWindowBounds as String] as? [String: Double] else { continue }
 
             let rect = CGRect(x: bounds["X"] ?? 0, y: bounds["Y"] ?? 0,
                               width: bounds["Width"] ?? 0, height: bounds["Height"] ?? 0)
-            if fits(rect, display) { return true }
+            if onDisplay.contains(rect) {
+                windowsByApp[owner, default: []].append(rect)
+            }
         }
 
-        return false
+        return windowsByApp.values.contains { fills(content, with: $0) }
     }
 
     /// `screen` bounds in the window server's flipped global space, which is
@@ -191,10 +208,22 @@ enum ScreenState {
         return pieces
     }
 
-    private static func fits(_ rect: CGRect, _ display: CGRect) -> Bool {
-        abs(rect.origin.x - display.origin.x) <= 1
-            && abs(rect.origin.y - display.origin.y) <= 1
-            && abs(rect.width - display.width) <= 1
-            && abs(rect.height - display.height) <= 1
+    /// Gaps up to this thick still count as filled for `isFullscreen`; the
+    /// measured fullscreen origin sat 1pt below the reported inset.
+    private static let fullscreenTolerance: CGFloat = 2
+
+    /// True when `rects` together cover `target` with no gap thicker than
+    /// `fullscreenTolerance`. Deliberately stricter than `isCovered`: writing
+    /// off a menu-bar-height strip here would make every zoomed window on a
+    /// display without a notch read as fullscreen.
+    private static func fills(_ target: CGRect, with rects: [CGRect]) -> Bool {
+        var remaining = [target]
+
+        for rect in rects {
+            remaining = remaining.flatMap { subtract(rect, from: $0) }
+            if remaining.isEmpty { return true }
+        }
+
+        return remaining.allSatisfy { min($0.width, $0.height) <= fullscreenTolerance }
     }
 }
