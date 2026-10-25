@@ -137,9 +137,15 @@ final class LockScreenManager: @unchecked Sendable {
             "preferredOrder": 0,
             "representativeAssetID": assetID,
             "previewImage": "file://\(previewPath)",
+            // Every key below is required. macOS 27 decodes the manifest
+            // strictly: one missing key here (localizedDescriptionKey, which
+            // macOS 26 tolerated) fails the whole manifest with
+            // NSCoderValueNotFoundError, and the system then shows no aerials
+            // at all on the lock screen - Apple's included, not just ours.
             "subcategories": [[
                 "id": subID,
                 "localizedNameKey": "OpenLiveWalls",
+                "localizedDescriptionKey": "From local files",
                 "preferredOrder": 0,
                 "representativeAssetID": assetID,
                 "previewImage": "file://\(previewPath)"
