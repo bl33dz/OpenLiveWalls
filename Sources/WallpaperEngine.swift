@@ -4,14 +4,25 @@ import AVKit
 
 @MainActor
 final class WallpaperEngine {
-    private var wallpaperWindows: [NSScreen: NSWindow] = [:]
+    // Everything per display is keyed by `DisplayID`, never by `NSScreen`.
+    //
+    // NSScreen compares equal by display ID, but each instance holds its own
+    // snapshot of frame and visibleFrame, and AppKit hands out new instances
+    // when the layout changes. A Swift dictionary keeps whichever equal key it
+    // saw first, so an NSScreen-keyed table silently retains an instance whose
+    // geometry describes a layout that no longer exists. Seen in practice: a
+    // key captured while an external display held the Dock kept reporting no
+    // Dock inset on the built-in for days, so the Dock's own strip read as
+    // visible wallpaper and the covered policy never paused. Geometry is read
+    // from `NSScreen.screens` at the moment it is needed instead.
+    private var wallpaperWindows: [DisplayID: NSWindow] = [:]
 
-    // Players are per screen, not per URL. An AVPlayer renders into a single
+    // Players are per display, not per URL. An AVPlayer renders into a single
     // AVPlayerLayer: attaching one player to several layers leaves every layer
     // but the last frozen on whatever frame it happened to hold.
-    private var players: [NSScreen: AVQueuePlayer] = [:]
-    private var loopers: [NSScreen: AVPlayerLooper] = [:]
-    private var playerURLs: [NSScreen: URL] = [:]
+    private var players: [DisplayID: AVQueuePlayer] = [:]
+    private var loopers: [DisplayID: AVPlayerLooper] = [:]
+    private var playerURLs: [DisplayID: URL] = [:]
 
     private var activeURL: URL?
     private let desktopLevel = Int(CGWindowLevelForKey(.desktopWindow)) + 1
@@ -27,7 +38,7 @@ final class WallpaperEngine {
     private let pollInterval: TimeInterval = 3
 
     private var policy: PlaybackPolicy = PersistenceManager.shared.playbackPolicy
-    private var pausedScreens: Set<NSScreen> = []
+    private var pausedDisplays: Set<DisplayID> = []
     private var screensAsleep = false
 
     nonisolated init() {}
@@ -108,19 +119,17 @@ final class WallpaperEngine {
         guard force || activeURL != url || wallpaperWindows.isEmpty else { return }
         activeURL = url
 
-        for screen in NSScreen.screens {
-            let player = player(for: url, on: screen)
-            showWallpaper(on: screen, player: player)
+        let live = liveScreens()
+        for (display, screen) in live {
+            let player = player(for: url, on: display)
+            showWallpaper(on: screen, display: display, player: player)
         }
 
-        removeDisconnectedScreens()
+        removeDisconnectedDisplays(keeping: Set(live.keys))
 
         // A wallpaper applied while a desktop is already hidden must not start
         // decoding there, so state is recomputed rather than assumed.
-        pausedScreens = []
-        for screen in players.keys where shouldPause(on: screen) {
-            pausedScreens.insert(screen)
-        }
+        pausedDisplays = displaysToPause(live)
         applyPlaybackState()
     }
 
@@ -128,30 +137,52 @@ final class WallpaperEngine {
     private func updatePlaybackState() {
         guard activeURL != nil, !players.isEmpty else { return }
 
-        var next: Set<NSScreen> = []
-        for screen in players.keys where shouldPause(on: screen) {
-            next.insert(screen)
-        }
+        let live = liveScreens()
+        let next = displaysToPause(live)
 
         if ProcessInfo.processInfo.environment["OWL_DEBUG"] != nil {
-            let states = players.keys.map { screen in
-                let size = screen.frame.size
-                return "\(Int(size.width))x\(Int(size.height))="
-                    + (next.contains(screen) ? "paused" : "playing")
+            let states = players.keys.map { display in
+                let shape = live[display].map { screen in
+                    let visible = screen.visibleFrame
+                    return "\(Int(screen.frame.width))x\(Int(screen.frame.height))"
+                        + " visible@y\(Int(visible.minY))h\(Int(visible.height))"
+                } ?? "gone"
+                return "display\(display)[\(shape)]=" + (next.contains(display) ? "paused" : "playing")
             }.sorted().joined(separator: " ")
-            let msg = "[owl] policy=\(policy.rawValue) screens=\(players.count) \(states)\n"
+            let msg = "[owl] policy=\(policy.rawValue) displays=\(players.count) \(states)\n"
             FileHandle.standardError.write(Data(msg.utf8))
         }
 
-        guard next != pausedScreens else { return }
-        pausedScreens = next
+        guard next != pausedDisplays else { return }
+        pausedDisplays = next
         applyPlaybackState()
+    }
+
+    /// The displays attached right now, each with the `NSScreen` instance
+    /// AppKit currently vends for it - the only instance whose geometry can be
+    /// trusted.
+    private func liveScreens() -> [DisplayID: NSScreen] {
+        var live: [DisplayID: NSScreen] = [:]
+        for screen in NSScreen.screens {
+            if let display = screen.displayID { live[display] = screen }
+        }
+        return live
+    }
+
+    /// Displays whose player should be stopped. A player whose display is no
+    /// longer attached is stopped too: it cannot be seen, and leaving it
+    /// running until the next rebuild would decode for nothing.
+    private func displaysToPause(_ live: [DisplayID: NSScreen]) -> Set<DisplayID> {
+        Set(players.keys.filter { display in
+            guard let screen = live[display] else { return true }
+            return shouldPause(on: screen)
+        })
     }
 
     /// Drives each screen's player to the state that screen should be in.
     private func applyPlaybackState() {
-        for (screen, player) in players {
-            if pausedScreens.contains(screen) {
+        for (display, player) in players {
+            if pausedDisplays.contains(display) {
                 player.pause()
             } else {
                 player.play()
@@ -188,23 +219,23 @@ final class WallpaperEngine {
         }
         workspaceObservers.removeAll()
 
-        for screen in Array(players.keys) {
-            teardownPlayer(for: screen)
+        for display in Array(players.keys) {
+            teardownPlayer(for: display)
         }
 
         for window in wallpaperWindows.values {
             window.orderOut(nil)
         }
         wallpaperWindows.removeAll()
-        pausedScreens.removeAll()
+        pausedDisplays.removeAll()
     }
 
-    private func player(for url: URL, on screen: NSScreen) -> AVQueuePlayer {
-        if let existing = players[screen], playerURLs[screen] == url {
+    private func player(for url: URL, on display: DisplayID) -> AVQueuePlayer {
+        if let existing = players[display], playerURLs[display] == url {
             return existing
         }
 
-        teardownPlayer(for: screen)
+        teardownPlayer(for: display)
 
         let item = AVPlayerItem(asset: AVURLAsset(url: url))
         item.preferredForwardBufferDuration = 0
@@ -213,31 +244,33 @@ final class WallpaperEngine {
         player.isMuted = true
         player.automaticallyWaitsToMinimizeStalling = false
 
-        players[screen] = player
-        loopers[screen] = AVPlayerLooper(player: player, templateItem: item)
-        playerURLs[screen] = url
+        players[display] = player
+        loopers[display] = AVPlayerLooper(player: player, templateItem: item)
+        playerURLs[display] = url
 
         return player
     }
 
-    private func teardownPlayer(for screen: NSScreen) {
-        loopers[screen]?.disableLooping()
-        players[screen]?.pause()
-        players[screen]?.removeAllItems()
+    private func teardownPlayer(for display: DisplayID) {
+        loopers[display]?.disableLooping()
+        players[display]?.pause()
+        players[display]?.removeAllItems()
 
-        loopers.removeValue(forKey: screen)
-        players.removeValue(forKey: screen)
-        playerURLs.removeValue(forKey: screen)
-        pausedScreens.remove(screen)
+        loopers.removeValue(forKey: display)
+        players.removeValue(forKey: display)
+        playerURLs.removeValue(forKey: display)
+        pausedDisplays.remove(display)
     }
 
-    private func showWallpaper(on screen: NSScreen, player: AVQueuePlayer) {
+    /// - Parameter screen: must be the live instance for `display`; its frame
+    ///   positions the window.
+    private func showWallpaper(on screen: NSScreen, display: DisplayID, player: AVQueuePlayer) {
         // Window content coordinates start at zero regardless of where the
         // screen sits in the global layout, so a screen frame with a non-zero
         // origin must not be used to position content inside the window.
         let contentBounds = CGRect(origin: .zero, size: screen.frame.size)
 
-        if let window = wallpaperWindows[screen] {
+        if let window = wallpaperWindows[display] {
             window.setFrame(screen.frame, display: true)
             for layer in window.contentView?.layer?.sublayers ?? [] {
                 guard let playerLayer = layer as? AVPlayerLayer else { continue }
@@ -273,19 +306,17 @@ final class WallpaperEngine {
 
         window.contentView = host
         window.orderFrontRegardless()
-        wallpaperWindows[screen] = window
+        wallpaperWindows[display] = window
     }
 
-    private func removeDisconnectedScreens() {
-        let current = Set(NSScreen.screens)
-
-        for (screen, window) in wallpaperWindows where !current.contains(screen) {
+    private func removeDisconnectedDisplays(keeping current: Set<DisplayID>) {
+        for (display, window) in wallpaperWindows where !current.contains(display) {
             window.orderOut(nil)
-            wallpaperWindows.removeValue(forKey: screen)
+            wallpaperWindows.removeValue(forKey: display)
         }
 
-        for screen in Array(players.keys) where !current.contains(screen) {
-            teardownPlayer(for: screen)
+        for display in Array(players.keys) where !current.contains(display) {
+            teardownPlayer(for: display)
         }
     }
 }

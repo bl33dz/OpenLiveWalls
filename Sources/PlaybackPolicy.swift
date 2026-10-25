@@ -84,10 +84,7 @@ enum ScreenState {
     /// `screen` bounds in the window server's flipped global space, which is
     /// the space `kCGWindowBounds` reports in.
     private static func displayBounds(for screen: NSScreen) -> CGRect? {
-        guard let number = screen.deviceDescription[NSDeviceDescriptionKey("NSScreenNumber")] as? NSNumber else {
-            return nil
-        }
-        return CGDisplayBounds(CGDirectDisplayID(number.uint32Value))
+        screen.displayID.map(CGDisplayBounds)
     }
 
     /// The screen's wallpaper-bearing area, converted from AppKit's
@@ -196,5 +193,15 @@ enum ScreenState {
             && abs(rect.origin.y - display.origin.y) <= 1
             && abs(rect.width - display.width) <= 1
             && abs(rect.height - display.height) <= 1
+    }
+}
+
+/// Stable identity for a display across layout changes. See `WallpaperEngine`
+/// for why `NSScreen` itself must never be stored as a key.
+typealias DisplayID = CGDirectDisplayID
+
+extension NSScreen {
+    var displayID: DisplayID? {
+        (deviceDescription[NSDeviceDescriptionKey("NSScreenNumber")] as? NSNumber)?.uint32Value
     }
 }
