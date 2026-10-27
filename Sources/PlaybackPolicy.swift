@@ -101,12 +101,43 @@ enum ScreenState {
             return nil
         }
         let flipHeight = primary.frame.maxY
-        let frame = screen.visibleFrame
+        let frame = reservingDockBand(screen.visibleFrame, in: screen.frame, screens: screens)
 
         return CGRect(x: frame.origin.x,
                       y: flipHeight - frame.maxY,
                       width: frame.width,
                       height: frame.height)
+    }
+
+    /// With "Displays have separate Spaces" on, the Dock moves to whichever
+    /// display it is summoned on, and only that display's `visibleFrame` makes
+    /// room for it. Windows zoomed while the Dock was on another display still
+    /// stop short of its band, so on every display but the Dock's that band
+    /// reads as visible wallpaper and playback never pauses there. The Dock can
+    /// appear on any display, so its band is reserved on all of them.
+    ///
+    /// The Dock's edge and thickness are taken from whichever display has it -
+    /// the largest bottom, left or right inset across screens - so no Dock
+    /// preference is read, and an auto-hidden Dock (no inset) changes nothing.
+    private static func reservingDockBand(_ visible: CGRect, in frame: CGRect, screens: [NSScreen]) -> CGRect {
+        guard screens.count > 1, dockMovesBetweenDisplays else { return visible }
+
+        let bottom = screens.map { $0.visibleFrame.minY - $0.frame.minY }.max() ?? 0
+        let left = screens.map { $0.visibleFrame.minX - $0.frame.minX }.max() ?? 0
+        let right = screens.map { $0.frame.maxX - $0.visibleFrame.maxX }.max() ?? 0
+
+        let minX = max(visible.minX, frame.minX + left)
+        let maxX = min(visible.maxX, frame.maxX - right)
+        let minY = max(visible.minY, frame.minY + bottom)
+        guard maxX > minX, visible.maxY > minY else { return visible }
+
+        return CGRect(x: minX, y: minY, width: maxX - minX, height: visible.maxY - minY)
+    }
+
+    /// False when "Displays have separate Spaces" is off, where the Dock stays
+    /// on the main display and other displays never reserve room for it.
+    private static var dockMovesBetweenDisplays: Bool {
+        !(UserDefaults(suiteName: "com.apple.spaces")?.bool(forKey: "spans-displays") ?? false)
     }
 
     /// Opaque, on-screen, ordinary application windows.
