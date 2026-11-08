@@ -20,6 +20,10 @@ final class LockScreenManager: @unchecked Sendable {
     private var eURL: URL { aDir.appendingPathComponent("manifest/entries.json") }
     private var tURL: URL { aDir.appendingPathComponent("manifest.tar") }
 
+    /// The manifest the aerials extension ships with, and falls back to.
+    private let bundledManifestURL = URL(fileURLWithPath:
+        "/System/Library/ExtensionKit/Extensions/WallpaperAerialsExtension.appex/Contents/Resources/entries.json")
+
     private var sURL: URL {
         applicationSupportDir.appendingPathComponent("com.apple.wallpaper/Store/Index.plist")
     }
@@ -120,7 +124,7 @@ final class LockScreenManager: @unchecked Sendable {
     }
 
     private func writeEntries(assetID: String, videoPath: String, name: String) async throws {
-        var entries = readEntries()
+        var entries = baseEntries()
         var categories = entries["categories"] as? [[String: Any]] ?? []
         var assets = entries["assets"] as? [[String: Any]] ?? []
 
@@ -323,6 +327,29 @@ final class LockScreenManager: @unchecked Sendable {
         let id = UUID().uuidString.uppercased()
         UserDefaults.standard.set(id, forKey: "owl_id")
         return id
+    }
+
+    /// The manifest to add our entries to: the one on disk, unless the OS ships
+    /// a newer one.
+    ///
+    /// macOS 27.2 bundles a `version` 2 manifest and loads it in place of a
+    /// `version` 1 manifest on disk, so entries added to the older file are
+    /// never seen: the wallpaper fails to acquire and the lock screen falls
+    /// back to the system default. A manifest left by an earlier release can
+    /// stay that old for as long as Apple publishes no download for the running
+    /// OS. Starting from the bundled copy, rather than only raising the number,
+    /// keeps the content in the format that version promises.
+    private func baseEntries() -> [String: Any] {
+        let onDisk = readEntries()
+
+        guard let data = try? Data(contentsOf: bundledManifestURL),
+              let bundled = try? JSONSerialization.jsonObject(with: data) as? [String: Any],
+              let bundledVersion = bundled["version"] as? Int,
+              bundledVersion > onDisk["version"] as? Int ?? 0 else {
+            return onDisk
+        }
+
+        return bundled
     }
 
     private func readEntries() -> [String: Any] {
